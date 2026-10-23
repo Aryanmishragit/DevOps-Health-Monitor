@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DevOps Health Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand-mark">H</div>
+    <div class="brand">HEALTH<span>MONITOR</span></div>
+    <div class="side-label">WORKSPACE</div>
+    <a class="nav active" href="/">▦ &nbsp; Overview</a>
+    <a class="nav" href="#services">◎ &nbsp; Services</a>
+    <a class="nav" href="#history">≋ &nbsp; Check history</a>
+    <div class="sidebar-bottom">
+      <div class="pulse"></div>
+      <div><strong>Monitoring engine</strong><small>Ready for checks</small></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">Workspace <span>/</span> Overview</div>
+      <div class="top-right"><span class="live-dot"></span> LOCAL INSTANCE <span class="avatar">AM</span></div>
+    </header>
+
+    <section class="intro">
+      <div>
+        <p class="eyebrow">SYSTEM OVERVIEW</p>
+        <h1>Service health</h1>
+        <p class="subtitle">Monitor availability and response performance from one place.</p>
+      </div>
+      <a class="outline-btn" href="{{ url_for('health') }}" target="_blank">↗ App health endpoint</a>
+    </section>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-list">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <section class="stats">
+      <article class="stat-card">
+        <div class="stat-head">TOTAL SERVICES <span class="stat-icon blue">◈</span></div>
+        <div class="stat-number">{{ services|length }}</div>
+        <div class="stat-foot">Configured endpoints</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-head">HEALTHY <span class="stat-icon green">✓</span></div>
+        <div class="stat-number">{{ healthy }}</div>
+        <div class="stat-foot"><span class="green-text">Operational</span> on last check</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-head">UNHEALTHY <span class="stat-icon red">!</span></div>
+        <div class="stat-number">{{ down }}</div>
+        <div class="stat-foot"><span class="red-text">Needs attention</span></div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-head">NOT CHECKED <span class="stat-icon amber">◷</span></div>
+        <div class="stat-number">{{ unknown }}</div>
+        <div class="stat-foot">Awaiting first check</div>
+      </article>
+    </section>
+
+    <section class="panel" id="services">
+      <div class="panel-heading">
+        <div><h2>Monitored services</h2><p>Manage endpoints and run on-demand health checks.</p></div>
+        <span class="count-pill">{{ services|length }} SERVICES</span>
+      </div>
+      <form class="add-form" action="{{ url_for('create_service') }}" method="post">
+        <label>Service name<input name="name" maxlength="80" placeholder="e.g. Public API" required></label>
+        <label>Endpoint URL<input name="url" type="url" placeholder="https://example.com" required></label>
+        <button class="primary-btn" type="submit">＋ Add service</button>
+      </form>
+      {% if services %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>SERVICE</th><th>LAST STATUS</th><th>RESPONSE TIME</th><th>LAST CHECKED</th><th>ACTIONS</th></tr></thead>
+          <tbody>
+          {% for service in services %}
+            <tr>
+              <td><div class="service-name"><span class="service-symbol">⌘</span><div><strong>{{ service.name }}</strong><small>{{ service.url }}</small></div></div></td>
+              <td>
+                {% if service.last_status == 'UP' %}<span class="status up"><i></i> Operational</span>
+                {% elif service.last_status == 'DOWN' %}<span class="status down"><i></i> Down</span>
+                {% else %}<span class="status unknown"><i></i> Not checked</span>{% endif %}
+                {% if service.last_http_status %}<small class="sub-status">HTTP {{ service.last_http_status }}</small>{% endif %}
+              </td>
+              <td class="latency">{% if service.last_response_ms is not none %}{{ "%.0f"|format(service.last_response_ms) }} ms{% else %}—{% endif %}</td>
+              <td class="date-cell">{{ service.last_checked_at|localtime }}</td>
+              <td><div class="actions">
+                <form action="{{ url_for('run_check', service_id=service.id) }}" method="post"><button class="check-btn" type="submit">↻ Check</button></form>
+                <form action="{{ url_for('remove_service', service_id=service.id) }}" method="post" onsubmit="return confirm('Remove this service and its history?')"><button class="delete-btn" title="Remove service" type="submit">×</button></form>
+              </div></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="empty-state"><div class="empty-icon">◎</div><h3>No services configured</h3><p>Add an endpoint above, then run a health check to see its status here.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="panel history-panel" id="history">
+      <div class="panel-heading">
+        <div><h2>Recent check history</h2><p>Latest health-check attempts saved in the local database.</p></div>
+        <span class="count-pill">LATEST 10</span>
+      </div>
+      {% if history %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>SERVICE</th><th>RESULT</th><th>HTTP CODE</th><th>LATENCY</th><th>TIMESTAMP</th></tr></thead>
+          <tbody>
+          {% for item in history %}
+            <tr>
+              <td><strong>{{ item.service_name }}</strong><small class="sub-status">{{ item.service_url }}</small></td>
+              <td>{% if item.status == 'UP' %}<span class="status up"><i></i> UP</span>{% else %}<span class="status down"><i></i> DOWN</span>{% endif %}</td>
+              <td>{{ item.http_status if item.http_status else '—' }}</td>
+              <td class="latency">{{ "%.0f"|format(item.response_ms) }} ms</td>
+              <td class="date-cell">{{ item.checked_at|localtime }}</td>
+            </tr>
+            {% if item.status == 'DOWN' %}<tr class="error-row"><td colspan="5">↳ {{ item.message }}</td></tr>{% endif %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <div class="empty-state compact"><p>Check history will appear here after your first check.</p></div>
+      {% endif %}
+    </section>
+    <footer>DEVOPS HEALTH MONITOR <span>·</span> Built with Python, Flask & SQLite <span class="footer-right">LOCAL DEVELOPMENT BUILD</span></footer>
+  </main>
+</body>
+</html>
